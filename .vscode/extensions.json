@@ -1,0 +1,15 @@
+{
+  "recommendations": [
+    // Mandatory
+    "charliermarsh.ruff",
+    "esbenp.prettier-vscode",
+    "ms-python.python",
+    "tamasfe.even-better-toml",
+
+    // Optional
+    "oderwat.indent-rainbow",
+    "pkief.material-icon-theme",
+    "seatonjiang.gitmoji-vscode",
+    "streetsidesoftware.code-spell-checker"
+  ]
+}

@@ -1,0 +1,4 @@
+.venv/
+dist/
+htmlcov/
+__pycache__/
