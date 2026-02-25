@@ -1,8 +1,11 @@
 init:
 	uv sync --frozen
 
+start: init
+	uv run agents_sandbox
+
 tests: init
-	uv run pytest
+	uv run pytest -s
 
 build: init
 	uv build --wheel
