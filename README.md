@@ -12,6 +12,12 @@ make init
 
 ## Development
 
+Start the application.
+
+```bash
+make start
+```
+
 Run the tests.
 
 ```bash

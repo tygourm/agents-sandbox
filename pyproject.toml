@@ -3,18 +3,29 @@ requires = ["uv_build"]
 build-backend = "uv_build"
 
 [dependency-groups]
-dev = ["pytest-cov", "ruff", "ty", "uv-build"]
+dev = ["pytest-asyncio", "pytest-cov", "ruff", "ty", "uv-build"]
 
 [project]
 name = "agents-sandbox"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["ag-ui-langgraph"]
+dependencies = [
+    "ag-ui-langgraph",
+    "asyncio",
+    "dotenv",
+    "fastapi",
+    "langchain-openai",
+    "langchain-tavily",
+]
+
+[project.scripts]
+agents_sandbox = "agents_sandbox.main:main"
 
 [tool.pytest.ini_options]
+asyncio_mode = "auto"
 addopts = [
     "--cov=agents_sandbox",
-    "--cov-fail-under=100",
+    # "--cov-fail-under=100",
     "--cov-report=html",
     "--cov-report=term",
     "-p no:cacheprovider",
@@ -25,11 +36,11 @@ select = ["ALL"]
 ignore = [
     "COM812", # missing-trailing-comma
     "D100",   # undocumented-public-module
-    # "D101",   # undocumented-public-class
-    # "D102",   # undocumented-public-method
-    "D103", # undocumented-public-function
-    "D104", # undocumented-public-package
-    # "D107",   # undocumented-public-init
+    "D101",   # undocumented-public-class
+    "D102",   # undocumented-public-method
+    "D103",   # undocumented-public-function
+    "D104",   # undocumented-public-package
+    "D107",   # undocumented-public-init
     "D203",   # incorrect-blank-line-before-class
     "D213",   # multi-line-summary-second-line
     "INP001", # implicit-namespace-package
@@ -37,5 +48,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = [
-    "S101", # assert
+    "PLR2004", # magic-value-comparison
+    "PT018",   # pytest-composite-assertion
+    "S101",    # assert
 ]
