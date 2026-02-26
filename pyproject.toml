@@ -3,7 +3,7 @@ requires = ["uv_build"]
 build-backend = "uv_build"
 
 [dependency-groups]
-dev = ["pytest-asyncio", "pytest-cov", "ruff", "ty", "uv-build"]
+dev = ["pytest-asyncio", "pytest-cov", "pytest-mock", "ruff", "ty", "uv-build"]
 
 [project]
 name = "agents-sandbox"
@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.scripts]
-agents_sandbox = "agents_sandbox.main:main"
+agents-sandbox = "agents_sandbox.main:main"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
