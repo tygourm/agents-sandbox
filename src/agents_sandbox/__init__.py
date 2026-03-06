@@ -1,3 +1,3 @@
-from importlib import metadata
+from importlib.metadata import version
 
-__version__ = metadata.version("agents-sandbox")
+__version__ = version("agents_sandbox")

@@ -1,26 +1,18 @@
-from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage
-from langchain_openai import ChatOpenAI
 
-from agents_sandbox.tools import math_toolbox, search_toolbox
+from agents_sandbox.langgraph import math_toolbox, search_toolbox
+from agents_sandbox.langgraph.workflows.models import chat
 
 
 def main() -> None:
-    load_dotenv()
-
-    model = ChatOpenAI(
-        model="openai/gpt-oss-120b",  # ty: ignore[unknown-argument]
-        base_url="https://albert.api.etalab.gouv.fr/v1",  # ty: ignore[unknown-argument]
-    )
-    agent = create_agent(model, [*math_toolbox, *search_toolbox])
-
+    agent = create_agent(chat, [*math_toolbox, *search_toolbox])
     content = "What is 123456 + 456789 - 123456789 ? Use your tools."
-    for mode, chunk in agent.stream(
+    for mode, data in agent.stream(
         {"messages": [HumanMessage(content)]},
-        stream_mode=["updates", "messages"],
+        stream_mode=["values", "messages"],
     ):
-        print(f"{mode} {chunk}\n")  # noqa: T201
+        print(f"{mode} {data}\n")  # noqa: T201
 
 
 if __name__ == "__main__":
