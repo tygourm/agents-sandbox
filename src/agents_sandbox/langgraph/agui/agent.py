@@ -1,6 +1,5 @@
 import time
-from asyncio import Queue
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Generator
 from typing import TYPE_CHECKING, cast
 from uuid import UUID
 
@@ -34,8 +33,7 @@ class LangGraphAgent:
     def __init__(self, graph: CompiledStateGraph) -> None:
         self._graph = graph
         self._running = False
-        self._messages: list[AIMessage] = []
-        self._event_queue: Queue[Event] = Queue()
+        self._messages: dict[str, AIMessage] = {}
 
     async def run(self, input_data: RunAgentInput) -> AsyncGenerator[Event]:
         try:
@@ -54,122 +52,114 @@ class LangGraphAgent:
         }
 
         async for e in self._graph.astream_events(state, config):
-            if e["event"] == "on_chain_start":
-                self._handle_chain_start(e, input_data)
-            elif e["event"] == "on_chain_end":
-                self._handle_chain_end(e, input_data)
-            elif e["event"] == "on_chat_model_stream":
-                self._handle_chat_model_stream(e)
-            elif e["event"] == "on_chat_model_end":
-                self._handle_chat_model_end(e)
-            elif e["event"] == "on_tool_end":
-                self._handle_tool_end(e)
-
-            while not self._event_queue.empty():
-                event = await self._event_queue.get()
+            for event in self._handle_event(e, input_data):
                 event.timestamp = time.time_ns()
                 event.raw_event = e
                 yield event
 
-    def _handle_chain_start(self, e: StreamEvent, input_data: RunAgentInput) -> None:
+    def _handle_event(
+        self,
+        e: StreamEvent,
+        input_data: RunAgentInput,
+    ) -> Generator[Event]:
+        match e["event"]:
+            case "on_chain_start":
+                yield from self._handle_chain_start(e, input_data)
+            case "on_chain_end":
+                yield from self._handle_chain_end(e, input_data)
+            case "on_chat_model_stream":
+                yield from self._handle_chat_model_stream(e)
+            case "on_chat_model_end":
+                yield from self._handle_chat_model_end(e)
+            case "on_tool_end":
+                yield from self._handle_tool_end(e)
+
+    def _handle_chain_start(
+        self,
+        e: StreamEvent,
+        input_data: RunAgentInput,
+    ) -> Generator[Event]:
         if (name := e["name"]) == self._graph.name:
             self._running = True
-            self._event_queue.put_nowait(
-                RunStartedEvent(
-                    thread_id=input_data.thread_id,
-                    run_id=input_data.run_id,
-                    parent_run_id=input_data.parent_run_id,
-                    input=input_data,
-                )
+            yield RunStartedEvent(
+                thread_id=input_data.thread_id,
+                run_id=input_data.run_id,
+                parent_run_id=input_data.parent_run_id,
+                input=input_data,
             )
             messages = langchain_messages_to_agui(e["data"]["input"]["messages"])
-            self._event_queue.put_nowait(MessagesSnapshotEvent(messages=messages))
+            yield MessagesSnapshotEvent(messages=messages)
         else:
-            self._event_queue.put_nowait(StepStartedEvent(step_name=name))
+            yield StepStartedEvent(step_name=name)
 
-    def _handle_chain_end(self, e: StreamEvent, input_data: RunAgentInput) -> None:
+    def _handle_chain_end(
+        self,
+        e: StreamEvent,
+        input_data: RunAgentInput,
+    ) -> Generator[Event]:
         if (name := e["name"]) == self._graph.name:
             messages = langchain_messages_to_agui(e["data"]["output"]["messages"])
-            self._event_queue.put_nowait(MessagesSnapshotEvent(messages=messages))
-            self._event_queue.put_nowait(
-                RunFinishedEvent(
-                    thread_id=input_data.thread_id,
-                    run_id=input_data.run_id,
-                    result=e["data"]["output"],
-                )
+            yield MessagesSnapshotEvent(messages=messages)
+            yield RunFinishedEvent(
+                thread_id=input_data.thread_id,
+                run_id=input_data.run_id,
+                result=e["data"]["output"],
             )
             self._running = False
         else:
-            self._event_queue.put_nowait(StepFinishedEvent(step_name=name))
+            yield StepFinishedEvent(step_name=name)
 
-    def _handle_chat_model_stream(self, e: StreamEvent) -> None:  # noqa: C901, PLR0912
+    def _handle_chat_model_stream(self, e: StreamEvent) -> Generator[Event]:  # noqa: C901
         chunk = cast("AIMessageChunk", e["data"]["chunk"])
         if not (message_id := chunk.id):
             return
-        if len(chunk.content) > 0:
-            if not any(m.id == message_id for m in self._messages):
-                self._event_queue.put_nowait(
-                    TextMessageStartEvent(message_id=message_id)
-                )
-                self._messages.append(chunk)
+        if chunk.content:
+            if message_id not in self._messages:
+                yield TextMessageStartEvent(message_id=message_id)
+                self._messages[message_id] = chunk
             else:
-                for i, m in enumerate(self._messages):
-                    if m.id == message_id:
-                        self._messages[i] += chunk
-                        break
-            self._event_queue.put_nowait(
-                TextMessageContentEvent(
-                    message_id=message_id,
-                    delta=chunk.content if isinstance(chunk.content, str) else "",
-                )
+                self._messages[message_id] += chunk
+            content = chunk.content
+            yield TextMessageContentEvent(
+                message_id=message_id,
+                delta=content if isinstance(content, str) else "",
             )
-        elif len(chunk.tool_call_chunks) > 0:
-            if not any(m.id == message_id for m in self._messages):
+        elif chunk.tool_call_chunks:
+            if message_id not in self._messages:
                 for tc in chunk.tool_call_chunks:
                     if not (tool_call_id := tc["id"]) or not (
                         tool_call_name := tc["name"]
                     ):
                         continue
-                    self._event_queue.put_nowait(
-                        ToolCallStartEvent(
-                            tool_call_id=tool_call_id,
-                            tool_call_name=tool_call_name,
-                            parent_message_id=message_id,
-                        )
+                    yield ToolCallStartEvent(
+                        tool_call_id=tool_call_id,
+                        tool_call_name=tool_call_name,
+                        parent_message_id=message_id,
                     )
-                self._messages.append(chunk)
+                self._messages[message_id] = chunk
             else:
                 for tc in chunk.tool_call_chunks:
-                    if not (
-                        message := next(
-                            (m for m in self._messages if m.id == message_id), None
-                        )
-                    ):
+                    if not (message := self._messages.get(message_id)):
                         continue
                     if not (
                         tool_call_id := message.tool_calls[tc["index"] or 0]["id"]
                     ) or not (delta := tc["args"]):
                         continue
-                    self._event_queue.put_nowait(
-                        ToolCallArgsEvent(tool_call_id=tool_call_id, delta=delta)
-                    )
+                    yield ToolCallArgsEvent(tool_call_id=tool_call_id, delta=delta)
 
-    def _handle_chat_model_end(self, e: StreamEvent) -> None:
+    def _handle_chat_model_end(self, e: StreamEvent) -> Generator[Event]:
         if not (message := cast("AIMessage", e["data"]["output"])):
             return
         if not (message_id := message.id):
             return
-        if len(message.content) > 0:
-            self._event_queue.put_nowait(TextMessageEndEvent(message_id=message_id))
-        elif len(message.tool_calls) > 0:
+        if message.content:
+            yield TextMessageEndEvent(message_id=message_id)
+        elif message.tool_calls:
             for tc in message.tool_calls:
-                if not (tool_call_id := tc["id"]):
-                    continue
-                self._event_queue.put_nowait(
-                    ToolCallEndEvent(tool_call_id=tool_call_id)
-                )
+                if tool_call_id := tc["id"]:
+                    yield ToolCallEndEvent(tool_call_id=tool_call_id)
 
-    def _handle_tool_end(self, e: StreamEvent) -> None:
+    def _handle_tool_end(self, e: StreamEvent) -> Generator[Event]:
         if not (tool_call := cast("ToolMessage", e["data"]["output"])):
             return
         if not (tool_call_id := tool_call.tool_call_id):
@@ -178,7 +168,7 @@ class LangGraphAgent:
             message := next(
                 (
                     m
-                    for m in self._messages
+                    for m in self._messages.values()
                     if m.tool_calls
                     and any(tc["id"] == tool_call_id for tc in m.tool_calls)
                 ),
@@ -188,10 +178,9 @@ class LangGraphAgent:
             return
         if not (message_id := message.id):
             return
-        self._event_queue.put_nowait(
-            ToolCallResultEvent(
-                message_id=message_id,
-                tool_call_id=tool_call_id,
-                content=tool_call.content if isinstance(tool_call.content, str) else "",
-            )
+        content = tool_call.content
+        yield ToolCallResultEvent(
+            message_id=message_id,
+            tool_call_id=tool_call_id,
+            content=content if isinstance(content, str) else "",
         )

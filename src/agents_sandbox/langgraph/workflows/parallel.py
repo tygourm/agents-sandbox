@@ -1,7 +1,7 @@
 from langchain_core.messages import AIMessage, AnyMessage
 from langgraph.graph import MessagesState, StateGraph
 
-from .models import chat
+from .models import create_model
 
 
 class State(MessagesState):
@@ -35,25 +35,25 @@ Story:
 def topic(state: State) -> dict[str, str]:
     content = next(m for m in reversed(state["messages"]) if m.type == "human").content
     prompt = TOPIC_PROMPT.format(content=content)
-    content = chat.invoke(prompt).content
+    content = create_model().invoke(prompt).content
     return {"topic": str(content)}
 
 
 def joke(state: State) -> dict[str, str]:
     prompt = JOKE_PROMPT.format(topic=state["topic"])
-    content = chat.invoke(prompt).content
+    content = create_model().invoke(prompt).content
     return {"joke": str(content)}
 
 
 def poem(state: State) -> dict[str, str]:
     prompt = POEM_PROMPT.format(topic=state["topic"])
-    content = chat.invoke(prompt).content
+    content = create_model().invoke(prompt).content
     return {"poem": str(content)}
 
 
 def story(state: State) -> dict[str, str]:
     prompt = STORY_PROMPT.format(topic=state["topic"])
-    content = chat.invoke(prompt).content
+    content = create_model().invoke(prompt).content
     return {"story": str(content)}
 
 
