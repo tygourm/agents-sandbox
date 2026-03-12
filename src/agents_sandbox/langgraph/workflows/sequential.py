@@ -1,7 +1,7 @@
 from langchain_core.messages import AnyMessage
 from langgraph.graph import MessagesState, StateGraph
 
-from .models import chat
+from .models import create_model
 
 
 class State(MessagesState):
@@ -43,7 +43,7 @@ def augment(state: State) -> dict[str, str]:
 
 
 def generate(state: State) -> dict[str, list[AnyMessage]]:
-    return {"messages": [chat.invoke(state["prompt"])]}
+    return {"messages": [create_model().invoke(state["prompt"])]}
 
 
 workflow = StateGraph(State)  # ty: ignore[invalid-argument-type]
